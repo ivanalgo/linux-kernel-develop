@@ -264,7 +264,8 @@ static inline void free_pud_range(struct mmu_gather *tlb, p4d_t *p4d,
 
 static inline void free_p4d_range(struct mmu_gather *tlb, pgd_t *pgd,
 				unsigned long addr, unsigned long end,
-				unsigned long floor, unsigned long ceiling)
+				unsigned long floor, unsigned long ceiling,
+				bool shared_pud)
 {
 	p4d_t *p4d;
 	unsigned long next;
@@ -276,7 +277,10 @@ static inline void free_p4d_range(struct mmu_gather *tlb, pgd_t *pgd,
 		next = p4d_addr_end(addr, end);
 		if (p4d_none_or_clear_bad(p4d))
 			continue;
-		free_pud_range(tlb, p4d, addr, next, floor, ceiling);
+		if (unlikely(shared_pud))
+			p4d_clear(p4d);
+		else
+			free_pud_range(tlb, p4d, addr, next, floor, ceiling);
 	} while (p4d++, addr = next, addr != end);
 
 	start &= PGDIR_MASK;
@@ -307,9 +311,10 @@ static inline void free_p4d_range(struct mmu_gather *tlb, pgd_t *pgd,
  * specified virtual address range [@addr..@end). It is part of
  * the memory unmap flow.
  */
-void free_pgd_range(struct mmu_gather *tlb,
+void __free_pgd_range(struct mmu_gather *tlb,
 			unsigned long addr, unsigned long end,
-			unsigned long floor, unsigned long ceiling)
+			unsigned long floor, unsigned long ceiling,
+			bool shared_pud)
 {
 	pgd_t *pgd;
 	unsigned long next;
@@ -365,8 +370,15 @@ void free_pgd_range(struct mmu_gather *tlb,
 		next = pgd_addr_end(addr, end);
 		if (pgd_none_or_clear_bad(pgd))
 			continue;
-		free_p4d_range(tlb, pgd, addr, next, floor, ceiling);
+		free_p4d_range(tlb, pgd, addr, next, floor, ceiling, shared_pud);
 	} while (pgd++, addr = next, addr != end);
+}
+
+void free_pgd_range(struct mmu_gather *tlb,
+			unsigned long addr, unsigned long end,
+			unsigned long floor, unsigned long ceiling)
+{
+	__free_pgd_range(tlb, addr, end, floor, ceiling, false);
 }
 
 void free_pgtables(struct mmu_gather *tlb, struct ma_state *mas,
@@ -401,9 +413,10 @@ void free_pgtables(struct mmu_gather *tlb, struct ma_state *mas,
 		unlink_file_vma_batch_add(&vb, vma);
 
 		/*
-		 * Optimization: gather nearby vmas into one call down
+		 * Do not free the shared page tables of an mshare region.
 		 */
-		while (next && next->vm_start <= vma->vm_end + PMD_SIZE) {
+		while (next && next->vm_start <= vma->vm_end + PMD_SIZE
+			&& !vma_is_mshare(next)) {
 			vma = next;
 			next = mas_find(mas, ceiling - 1);
 			if (unlikely(xa_is_zero(next)))
@@ -415,8 +428,9 @@ void free_pgtables(struct mmu_gather *tlb, struct ma_state *mas,
 		}
 		unlink_file_vma_batch_final(&vb);
 
-		free_pgd_range(tlb, addr, vma->vm_end,
-			floor, next ? next->vm_start : ceiling);
+		__free_pgd_range(tlb, addr, vma->vm_end,
+			floor, next ? next->vm_start : ceiling,
+			vma_is_mshare(vma));
 		vma = next;
 	} while (vma);
 }
@@ -1878,6 +1892,13 @@ void __unmap_page_range(struct mmu_gather *tlb,
 {
 	pgd_t *pgd;
 	unsigned long next;
+
+	/*
+	 * Do not unmap vmas that share page tables through an
+	 * mshare region.
+	 */
+	if (vma_is_mshare(vma))
+		return;
 
 	BUG_ON(addr >= end);
 	tlb_start_vma(tlb, vma);
@@ -6329,6 +6350,11 @@ vm_fault_t handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 	ret = sanitize_fault_flags(vma, &flags);
 	if (ret)
 		goto out;
+
+	if (unlikely(vma_is_mshare(vma))) {
+		WARN_ON_ONCE(1);
+		return VM_FAULT_SIGBUS;
+	}
 
 	if (!arch_vma_access_permitted(vma, flags & FAULT_FLAG_WRITE,
 					    flags & FAULT_FLAG_INSTRUCTION,
