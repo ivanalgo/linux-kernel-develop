@@ -127,6 +127,7 @@ TARGETS += mm
 TARGETS += x86
 TARGETS += x86/bugs
 TARGETS += zram
+TARGETS += mshare
 #Please keep the TARGETS list alphabetically sorted
 # Run "make quicktest=1 run_tests" or
 # "make quicktest=1 kselftest" from top level Makefile
