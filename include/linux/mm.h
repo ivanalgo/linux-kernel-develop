@@ -3217,6 +3217,7 @@ static inline spinlock_t *pud_lock(struct mm_struct *mm, pud_t *pud)
 
 static inline void pagetable_pud_ctor(struct ptdesc *ptdesc)
 {
+	ptdesc_pud_pts_init(ptdesc);
 	__pagetable_ctor(ptdesc);
 }
 
