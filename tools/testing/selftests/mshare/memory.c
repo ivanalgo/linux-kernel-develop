@@ -68,4 +68,22 @@ TEST_F(memory, swap)
 	ASSERT_GT(swap_size, MB(2) * 9 / 10);
 }
 
+TEST_F(memory, thp)
+{
+	/* fill physical memory */
+	memset(self->addr, 0x01, MB(2));
+
+	size_t huge = read_huge_from_cgroup(self->cgroup);
+
+	/*
+	 * mshare only allocate in the best effort way, and
+	 * don't support madvise(MADV_HUGEPAGE) to change pages
+	 * into THP or khuged to replace pages with THP.
+	 */
+	ksft_print_msg("Tip: Please enable transparent hugepages for shmem before running this test.\n"
+			"For example: echo always > /sys/kernel/mm/transparent_hugepage/shmem_enabled\n");
+
+	ASSERT_GE(huge, MB(2));
+}
+
 TEST_HARNESS_MAIN
