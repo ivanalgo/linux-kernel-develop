@@ -178,11 +178,11 @@ int write_data_to_cgroup(char *cgroup, char *file, char *data)
 	return ret;
 }
 
-int attach_to_cgroup(char *cgroup, pid_t pid)
+int attach_to_cgroup(char *cgroup)
 {
 	char pid_str[32];
 
-	snprintf(pid_str, sizeof(pid_str), "%d", pid);
+	snprintf(pid_str, sizeof(pid_str), "%d", getpid());
 	return write_data_to_cgroup(cgroup, "cgroup.procs", pid_str);
 }
 
@@ -190,7 +190,7 @@ int attach_to_cgroup(char *cgroup, pid_t pid)
  * Simplely, just move the pid to root memcg as avoid
  * complicated consideration.
  */
-int dettach_from_cgroup(char *cgroup, pid_t pid)
+int dettach_from_cgroup(char *cgroup)
 {
 	char pid_str[32];
 	char *root_memcg;
@@ -200,7 +200,7 @@ int dettach_from_cgroup(char *cgroup, pid_t pid)
 	else
 		root_memcg = CGROUP_BASE "memory";
 
-	snprintf(pid_str, sizeof(pid_str), "%d", pid);
+	snprintf(pid_str, sizeof(pid_str), "%d", getpid());
 	return write_data_to_cgroup(root_memcg, "cgroup.procs", pid_str);
 }
 
